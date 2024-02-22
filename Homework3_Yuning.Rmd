@@ -1,0 +1,152 @@
+---
+title: "Homework3"
+author: "Yuning Li"
+date: "2024-02-21"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library('splines')        ## for 'bs'
+library('dplyr')          ## for 'select', 'filter', and others
+library('magrittr')       ## for '%<>%' operator
+library('glmnet')         ## for 'glmnet'
+```
+
+```{r}
+###  Linear regression examples ###
+
+## load prostate data
+prostate <- 
+  read.table(url(
+    'https://web.stanford.edu/~hastie/ElemStatLearn/datasets/prostate.data'))
+
+
+## split prostate into testing and training subsets
+prostate_train <- prostate %>%
+  filter(train == TRUE) %>% 
+  select(-train)
+
+prostate_test <- prostate %>%
+  filter(train == FALSE) %>% 
+  select(-train)
+
+
+## predict lpsa consider all other predictors
+fit <- lm(lpsa ~ ., data=prostate_train)
+
+## functions to compute testing/training error 
+L2_loss <- function(y, yhat)
+  (y-yhat)^2
+error <- function(dat, fit, loss=L2_loss)
+  mean(loss(dat$lcavol, predict(fit, newdata=dat)))
+
+```
+
+```{r}
+## train_error 
+error(prostate_train, fit)
+
+## testing error 
+error(prostate_test, fit)
+```
+
+```{r}
+## use glmnet to fit ridge regression
+form  <- lpsa ~  lweight + age + lbph + lcp + pgg45 + lcavol + svi + gleason
+x_inp <- model.matrix(form, data=prostate_train)
+y_out <- prostate_train$lpsa
+# Use glmnet to fit ridge regression
+fit_ridge <- glmnet(x = x_inp, y = y_out, alpha = 0, lambda = seq(0.5, 0, -0.05))
+
+# Display the coefficients for different lambda values
+print(fit_ridge$beta)
+
+# Tune the value of lambda based on cross-validation
+cv_fit_ridge <- cv.glmnet(x = x_inp, y = y_out, alpha = 0)
+
+# Display the optimal lambda
+best_lambda <- cv_fit_ridge$lambda.min
+print(best_lambda)
+```
+
+```{r}
+
+## functions to compute testing/training error with glmnet
+error <- function(dat, fit_ridge, lam, form, loss=L2_loss) {
+  x_inp <- model.matrix(form, data=dat)
+  y_out <- dat$lpsa
+  y_hat <- predict(fit_ridge, newx=x_inp, s=lam)  ## see predict.elnet
+  mean(loss(y_out, y_hat))
+}
+```
+
+```{r}
+## train_error at lambda=0
+error(prostate_train, fit_ridge, lam=0, form=form)
+
+## testing error at lambda=0
+error(prostate_test, fit_ridge, lam=0, form=form)
+
+## train_error at lambda=0.03
+error(prostate_train, fit_ridge, lam=0.05, form=form)
+
+## testing error at lambda=0.03
+error(prostate_test, fit_ridge, lam=0.05, form=form)
+```
+
+```{r}
+## compute training and testing errors as function of lambda 
+err_train_1 <- sapply(fit_ridge$lambda, function(lam) 
+  error(prostate_train, fit_ridge, lam, form))
+err_test_1 <- sapply(fit_ridge$lambda, function(lam) 
+  error(prostate_test, fit_ridge, lam, form))
+
+```
+
+```{r}
+## plot test/train error
+plot(x=range(fit_ridge$lambda),
+     y=range(c(err_train_1, err_test_1)),
+     xlim=rev(range(fit_ridge$lambda)),
+     type='n',
+     xlab=expression(lambda),
+     ylab='train/test error')
+points(fit_ridge$lambda, err_train_1, pch=19, type='b', col='darkblue')
+points(fit_ridge$lambda, err_test_1, pch=19, type='b', col='darkred')
+legend('topright', c('train','test'), lty=1, pch=19,
+       col=c('darkblue','darkred'), bty='n')
+
+colnames(fit_ridge$beta) <- paste('lam =', fit_ridge$lambda)
+print(fit_ridge$beta %>% as.matrix)
+```
+
+```{r}
+# Plot path diagram with effective degrees of freedom
+plot(x = range(fit_ridge$lambda),
+     y = range(as.matrix(fit_ridge$beta)),
+     type = 'n',
+     xlab = expression(df(lambda)),
+     ylab = 'Coefficients')
+
+# Plot coefficients
+for (i in 1:nrow(fit_ridge$beta)) {
+  points(x = fit_ridge$lambda, y = fit_ridge$beta[i,], pch = 19, col = '#00000055')
+  lines(x = fit_ridge$lambda, y = fit_ridge$beta[i,], col = '#00000055')
+}
+
+# Add vertical line at df value chosen by cross-validation
+abline(v = best_lambda, col = 'red', lty = 2)
+
+# Add labels for coefficients
+text(x = 0, y = fit_ridge$beta[, ncol(fit_ridge$beta)], 
+     labels = rownames(fit_ridge$beta),
+     xpd = NA, pos = 4, srt = 45)
+
+# Add horizontal line at y = 0
+abline(h = 0, lty = 3, lwd = 2)
+```
+
