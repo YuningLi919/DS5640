@@ -1,0 +1,171 @@
+---
+title: "Homework 4"
+author: "Yuning Li"
+date: "2024-03-05"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r cars}
+train_data <- read.table("/Users/yuningli/Desktop/zip.train.gz")
+test_data<- read.table("/Users/yuningli/Desktop/zip.test.gz")
+library(class)
+library(caret)
+```
+
+```{r}
+##########################question 1: knn model################################
+# Extract labels and features
+train_labels <- train_data[, 1]
+train_features <- train_data[, -1]
+test_labels <- test_data[, 1]
+test_features <- test_data[, -1]
+
+# Function to normalize features (if needed)
+normalize <- function(data) {
+  (data - min(data)) / (max(data) - min(data))
+}
+
+# Normalize features to [0, 1] (assuming grayscale values)
+train_features_normalized <- apply(train_features, 2, normalize)
+test_features_normalized <- apply(test_features, 2, normalize)
+
+# Train k-NN model
+k <- 5  # You can adjust the value of k
+knn_model <- knn(train_features_normalized, test_features_normalized, train_labels, k = k)
+
+# Evaluate the model
+error_rate <- mean(knn_model != test_labels)
+cat('Error rate:', error_rate, '\n')
+```
+
+
+
+```{r}
+########################Q2################################
+# Extract labels and features
+labels <- train_data[, 1]
+features <- train_data[, -1]
+
+# Convert labels to factor
+labels <- as.factor(labels)
+
+# Set up control parameters for 5-fold cross-validation
+folds <- createFolds(labels, k = 5, list = TRUE)
+k_values <- 1:20
+
+# Perform k-fold cross-validation
+cv_errors <- numeric(length(k_values))
+
+for (i in seq_along(k_values)) {
+  k <- k_values[i]
+  current_errors <- numeric(length(folds))
+  
+  for (j in seq_along(folds)) {
+    train_indices <- unlist(folds[-j])
+    test_indices <- folds[[j]]
+    
+    knn_model <- knn(features[train_indices, ], features[test_indices, ], labels[train_indices], k = k)
+    
+    current_errors[j] <- mean(knn_model != labels[test_indices])
+  }
+  
+  cv_errors[i] <- mean(current_errors)
+}
+
+# Print the estimated average test error for each 'k'
+print(data.frame(k = k_values, avg_error = cv_errors))
+```
+
+
+
+```{r}
+########################Q3########################
+
+# Calculate standard errors
+se <- sd(cv_errors) / sqrt(length(cv_errors))
+
+# Plot the estimated average test error as a function of 'k' with error bars
+plot(k_values, cv_errors, type = 'b', xlab = 'k', ylab = 'Average Test Error', main = 'k-NN Cross Validation')
+
+# Add error bars
+arrows(k_values, cv_errors - se, k_values, cv_errors + se, angle = 90, code = 3, length = 0.05, col = "red")
+```
+
+
+
+```{r}
+#############################Q4######################################
+# Find the index of the minimum cross-validated error
+min_error_index <- which.min(cv_errors)
+
+# Identify the minimum error and its associated 'k' value
+min_error <- cv_errors[min_error_index]
+best_k <- k_values[min_error_index]
+
+# Calculate the standard error
+se <- sd(cv_errors) / sqrt(length(cv_errors))
+
+# Identify the largest 'k' within one standard error of the minimum
+selected_k <- k_values[cv_errors <= min_error + se][1]
+
+cat('Minimum Cross-validated Error:', min_error, '\n')
+cat('Best k Value:', best_k, '\n')
+cat('Selected k using One-Standard Error Rule:', selected_k, '\n')
+
+```
+
+
+
+```{r}
+#############################Q5 #####################################
+
+# Extract labels and features
+train_labels <- train_data[, 1]
+train_features <- train_data[, -1]
+
+# Convert labels to factor
+train_labels <- as.factor(train_labels)
+
+# Fit the final k-NN model using the full training dataset and 'k=1'
+final_k <- 1  # Use the selected 'k' from the one-standard error rule
+final_knn_model <- knn(train_features, train_features, train_labels, k = final_k)
+
+# Print the final k-NN model details
+cat('Final k-NN Model (k =', final_k, '):\n')
+print(final_knn_model)
+
+```
+
+
+
+```{r}
+############################# Q6 #####################################
+# Extract labels and features from the test dataset
+test_labels <- test_data[, 1]
+test_features <- test_data[, -1]
+
+# Convert labels to factor
+test_labels <- as.factor(test_labels)
+
+# Use the final k-NN model to make predictions on the test dataset
+test_predictions <- knn(train_features, test_features, train_labels, k = final_k)
+
+# Create a confusion matrix
+conf_matrix <- table(Actual = test_labels, Predicted = test_predictions)
+
+# Print the confusion matrix
+cat('Confusion Matrix:\n')
+print(conf_matrix)
+
+# Calculate the conditional test error using zero-one loss
+conditional_test_error <- 1 - sum(diag(conf_matrix)) / sum(conf_matrix)
+cat('\nConditional Test Error (Zero-One Loss):', conditional_test_error, '\n')
+
+
+```
+
